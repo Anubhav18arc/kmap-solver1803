@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>K-Map Solver & NAND/NOR Circuit Generator</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #10b981;
+      --accent-blue: #38bdf8;
+      --amber: #f59e0b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 2rem 1rem;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 1.85rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin-bottom: 1.75rem;
+    }
+
+    /* Controls */
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    select, button {
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 0.5rem 0.9rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    select:hover, button:hover {
+      border-color: var(--accent-blue);
+      background: #273549;
+    }
+
+    /* K-Map Grid */
+    .kmap-wrapper {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 2rem;
+      overflow-x: auto;
+    }
+
+    .kmap-table {
+      border-collapse: collapse;
+      user-select: none;
+    }
+
+    .kmap-table th {
+      padding: 0.5rem 0.75rem;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.9rem;
+      text-align: center;
+    }
+
+    .corner-label {
+      color: var(--accent-blue) !important;
+      font-family: monospace;
+      font-size: 0.95rem !important;
+    }
+
+    .kmap-cell {
+      width: 68px;
+      height: 68px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      text-align: center;
+      vertical-align: middle;
+      cursor: pointer;
+      position: relative;
+      transition: background 0.12s, transform 0.08s;
+    }
+
+    .kmap-cell:hover {
+      border-color: var(--accent-blue);
+    }
+
+    .kmap-cell:active {
+      transform: scale(0.96);
+    }
+
+    .kmap-cell .val {
+      font-size: 1.4rem;
+      font-weight: 700;
+    }
+
+    .kmap-cell .idx {
+      position: absolute;
+      bottom: 4px;
+      right: 6px;
+      font-size: 0.68rem;
+      color: var(--muted);
+      font-family: monospace;
+    }
+
+    .cell-0 { color: var(--muted); }
+    .cell-1 { background: rgba(16, 185, 129, 0.22); color: #34d399; border-color: rgba(16, 185, 129, 0.5); }
+    .cell-d { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border-color: rgba(245, 158, 11, 0.5); }
+
+    /* Output Cards */
+    .results-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+    }
+
+    .card h2 {
+      font-size: 1.15rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+      color: var(--accent-blue);
+    }
+
+    .expr-box {
+      background: var(--bg);
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-family: "Fira Code", Consolas, monospace;
+      font-size: 1.05rem;
+      word-break: break-word;
+    }
+
+    .expr-box span {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .groups-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      list-style: none;
+    }
+
+    .groups-list li {
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #bae6fd;
+      padding: 0.2rem 0.55rem;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-family: monospace;
+    }
+
+    .circuit-box {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 0.75rem;
+      overflow-x: auto;
+      display: flex;
+      justify-content: center;
+      min-height: 140px;
+      align-items: center;
+    }
+
+    svg text {
+      font-family: "Fira Code", Consolas, monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>K-Map Solver & NAND/NOR Implementation</h1>
+    <p class="subtitle">
+      Click any cell to cycle: <strong>0</strong> → <strong>1</strong> → <strong>d (Don't Care)</strong>
+    </p>
+
+    <div class="controls">
+      <label for="varCount">Variables:</label>
+      <select id="varCount">
+        <option value="2">2 Variables (A, B)</option>
+        <option value="3">3 Variables (A, B, C)</option>
+        <option value="4" selected>4 Variables (A, B, C, D)</option>
+      </select>
+      <button id="btnReset">Clear (All 0)</button>
+      <button id="btnAllOne">Set All 1</button>
+      <button id="btnRandom">Randomize</button>
+    </div>
+
+    <div class="kmap-wrapper" id="kmapContainer"></div>
+
+    <div class="results-grid">
+      <div class="card">
+        <h2>SOP → Pure NAND Gate Circuit</h2>
+        <div class="expr-box">F = <span id="sopExpr">0</span></div>
+        <ul class="groups-list" id="sopGroups"></ul>
+        <div class="circuit-box" id="nandCircuit"></div>
+      </div>
+
+      <div class="card">
+        <h2>POS → Pure NOR Gate Circuit</h2>
+        <div class="expr-box">F = <span id="posExpr">0</span></div>
+        <ul class="groups-list" id="posGroups"></ul>
+        <div class="circuit-box" id="norCircuit"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const VARS = ["A", "B", "C", "D"];
+    const GRAY_1 = ["0", "1"];
+    const GRAY_2 = ["00", "01", "11", "10"];
+
+    let numVars = 4;
+    let cells = new Array(16).fill(0); // 0, 1, or 'd'
+
+    const varSelect = document.getElementById("varCount");
+    const kmapContainer = document.getElementById("kmapContainer");
+
+    // --- 1. K-Map Grid Rendering ---
+    function renderKMap() {
+      const rowGray = numVars === 4 ? GRAY_2 : GRAY_1;
+      const colGray = numVars === 2 ? GRAY_1 : GRAY_2;
+      const rowLabel = numVars === 4 ? "AB" : "A";
+      const colLabel = numVars === 4 ? "CD" : numVars === 3 ? "BC" : "B";
+      const colBits = numVars === 2 ? 1 : 2;
+
+      let html = `<table class="kmap-table"><thead><tr><th class="corner-label">${rowLabel} \\ ${colLabel}</th>`;
+      for (const cg of colGray) html += `<th>${cg}</th>`;
+      html += `</tr></thead><tbody>`;
+
+      for (const rg of rowGray) {
+        html += `<tr><th>${rg}</th>`;
+        for (const cg of colGray) {
+          const minterm = (parseInt(rg, 2) << colBits) | parseInt(cg, 2);
+          const val = cells[minterm];
+          const cls = val === 1 ? "cell-1" : val === "d" ? "cell-d" : "cell-0";
+          html += `
+            <td class="kmap-cell ${cls}" data-idx="${minterm}">
+              <span class="val">${val}</span>
+              <span class="idx">m${minterm}</span>
+            </td>`;
+        }
+        html += `</tr>`;
+      }
+      html += `</tbody></table>`;
+      kmapContainer.innerHTML = html;
+
+      kmapContainer.querySelectorAll(".kmap-cell").forEach(td => {
+        td.addEventListener("click", () => {
+          const i = Number(td.dataset.idx);
+          cells[i] = cells[i] === 0 ? 1 : cells[i] === 1 ? "d" : 0;
+          renderKMap();
+          solveAndRender();
+        });
+      });
+    }
+
+    // --- 2. Exact Prime Implicant & Minimal Cover Solver ---
+    function solveBoolean(targets, dontCares) {
+      const totalCells = 1 << numVars;
+      if (targets.length === 0) return { constant: 0, cubes: [] };
+      if (targets.length + dontCares.length === totalCells) return { constant: 1, cubes: [] };
+
+      const targetSet = new Set(targets);
+      const allowedSet = new Set([...targets, ...dontCares]);
+
+      // Generate all 3^n possible cubes (each bit: 0, 1, or -1 for '-')
+      const validCubes = [];
+      function genCubes(pos, current) {
+        if (pos === numVars) {
+          const covered = [];
+          for (let m = 0; m < totalCells; m++) {
+            let match = true;
+            for (let b = 0; b < numVars; b++) {
+              const bit = (m >> (numVars - 1 - b)) & 1;
+              if (current[b] !== -1 && current[b] !== bit) {
+                match = false;
+                break;
+              }
+            }
+            if (match) covered.push(m);
+          }
+
+          let coversTarget = false;
+          for (const m of covered) {
+            if (!allowedSet.has(m)) return;
+            if (targetSet.has(m)) coversTarget = true;
+          }
+          if (coversTarget) {
+            let targetMask = 0;
+            targets.forEach((t, idx) => {
+              if (covered.includes(t)) targetMask |= (1 << idx);
+            });
+            const literals = current.filter(v => v !== -1).length;
+            validCubes.push({ pattern: [...current], covered, targetMask, literals });
+          }
+          return;
+        }
+        for (const v of [0, 1, -1]) {
+          current[pos] = v;
+          genCubes(pos + 1, current);
+        }
+      }
+      genCubes(0, new Array(numVars));
+
+      // Keep only maximal cubes (Prime Implicants)
+      const primeImplicants = validCubes.filter((c1, i) =>
+        !validCubes.some((c2, j) =>
+          i !== j &&
+          c2.covered.length > c1.covered.length &&
+          c1.covered.every(m => c2.covered.includes(m))
+        )
+      );
+
+      // Select Essential Prime Implicants first
+      const fullMask = (1 << targets.length) - 1;
+      const chosen = [];
+      let coveredMask = 0;
+
+      for (let t = 0; t < targets.length; t++) {
+        const bit = 1 << t;
+        const covering = primeImplicants.filter(pi => (pi.targetMask & bit) !== 0);
+        if (covering.length === 1 && !chosen.includes(covering[0])) {
+          chosen.push(covering[0]);
+          coveredMask |= covering[0].targetMask;
+        }
+      }
+
+      if (coveredMask === fullMask) return { constant: null, cubes: chosen };
+
+      // Exact branch-and-bound for any remaining uncovered targets
+      const remaining = primeImplicants.filter(pi => (pi.targetMask & ~coveredMask) !== 0);
+      let bestExtra = null;
+      let bestLitSum = Infinity;
+
+      function search(idx, mask, picked, litSum) {
+        if (bestExtra && picked.length > bestExtra.length) return;
+        if (mask === fullMask) {
+          if (!bestExtra || picked.length < bestExtra.length || (picked.length === bestExtra.length && litSum < bestLitSum)) {
+            bestExtra = [...picked];
+            bestLitSum = litSum;
+          }
+          return;
+        }
+        if (idx === remaining.length) return;
+
+        const pi = remaining[idx];
+        if ((pi.targetMask & ~mask) !== 0) {
+          picked.push(pi);
+          search(idx + 1, mask | pi.targetMask, picked, litSum + pi.literals);
+          picked.pop();
+        }
+        search(idx + 1, mask, picked, litSum);
+      }
+
+      search(0, coveredMask, [], 0);
+      return { constant: null, cubes: [...chosen, ...(bestExtra || [])] };
+    }
+
+    // --- 3. Expression Formatting ---
+    function cubeToLiterals(pattern, isPOS) {
+      const lits = [];
+      for (let i = 0; i < numVars; i++) {
+        if (pattern[i] === -1) continue;
+        // SOP: 1 -> A, 0 -> A' | POS: 0 -> A, 1 -> A'
+        const complemented = isPOS ? pattern[i] === 1 : pattern[i] === 0;
+        lits.push(complemented ? `${VARS[i]}'` : VARS[i]);
+      }
+      return lits;
+    }
+
+    // --- 4. Pure NAND / Pure NOR SVG Circuit Generator ---
+    function drawGateSVG(type, x, y, w = 48, h = 34) {
+      const cy = y + h / 2;
+      if (type === "NAND") {
+        return `
+          <path d="M ${x} ${y} L ${x + 22} ${y} A ${h/2} ${h/2} 0 0 1 ${x + 22} ${y + h} L ${x} ${y + h} Z"
+                fill="#1e293b" stroke="#38bdf8" stroke-width="2"/>
+          <circle cx="${x + 43}" cy="${cy}" r="4" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>
+        `;
+      } else {
+        return `
+          <path d="M ${x} ${y} Q ${x + 12} ${cy} ${x} ${y + h} L ${x + 14} ${y + h}
+                   Q ${x + 34} ${y + h} ${x + 40} ${cy} Q ${x + 34} ${y} ${x + 14} ${y} Z"
+                fill="#1e293b" stroke="#10b981" stroke-width="2"/>
+          <circle cx="${x + 44}" cy="${cy}" r="4" fill="#0f172a" stroke="#10b981" stroke-width="2"/>
+        `;
+      }
+    }
+
+    function renderCircuit(containerId, gateType, terms, constantVal) {
+      const el = document.getElementById(containerId);
+      const wireColor = gateType === "NAND" ? "#38bdf8" : "#10b981";
+
+      // Constant 0 or 1
+      if (constantVal !== null) {
+        const label = constantVal === 1 ? "1 (VCC)" : "0 (GND)";
+        el.innerHTML = `
+          <svg width="260" height="70" viewBox="0 0 260 70">
+            <rect x="20" y="18" width="90" height="34" rx="6" fill="#1e293b" stroke="${wireColor}" stroke-width="2"/>
+            <text x="65" y="40" fill="#f8fafc" font-size="14" text-anchor="middle">${label}</text>
+            <line x1="110" y1="35" x2="210" y2="35" stroke="${wireColor}" stroke-width="2"/>
+            <text x="220" y="40" fill="#f8fafc" font-size="15" font-weight="bold">F</text>
+          </svg>`;
+        return;
+      }
+
+      // Single literal (direct wire)
+      if (terms.length === 1 && terms[0].length === 1) {
+        el.innerHTML = `
+          <svg width="260" height="70" viewBox="0 0 260 70">
+            <text x="35" y="40" fill="#f8fafc" font-size="15" text-anchor="end">${terms[0][0]}</text>
+            <line x1="45" y1="35" x2="210" y2="35" stroke="${wireColor}" stroke-width="2"/>
+            <text x="220" y="40" fill="#f8fafc" font-size="15" font-weight="bold">F</text>
+          </svg>`;
+        return;
+      }
+
+      // Multi-stage NAND-NAND or NOR-NOR
+      const gateH = 34;
+      const rowStep = 58;
+      const topPad = 24;
+      const svgH = Math.max(120, topPad * 2 + terms.length * rowStep - 20);
+      const s1X = 100;
+      const s2X = 270;
+      const s2Y = svgH / 2 - gateH / 2;
+      const svgW = 390;
+
+      let svg = `<svg width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}">`;
+      const s1OutX = gateType === "NAND" ? s1X + 47 : s1X + 48;
+      const s2InX = gateType === "NAND" ? s2X : s2X + 5;
+      const s2OutX = gateType === "NAND" ? s2X + 47 : s2X + 48;
+
+      terms.forEach((lits, i) => {
+        const gy = topPad + i * rowStep;
+        const gMidY = gy + gateH / 2;
+
+        // Draw Stage-1 gate
+        svg += drawGateSVG(gateType, s1X, gy);
+
+        // Input wires + labels for Stage-1 gate
+        const inX = gateType === "NAND" ? s1X : s1X + 5;
+        lits.forEach((lit, li) => {
+          const offset = lits.length === 1
+            ? gateH / 2
+            : 6 + (li * (gateH - 12)) / (lits.length - 1);
+          const py = gy + offset;
+          svg += `<line x1="45" y1="${py}" x2="${inX}" y2="${py}" stroke="#94a3b8" stroke-width="1.6"/>`;
+          svg += `<text x="38" y="${py + 4}" fill="#f8fafc" font-size="12" text-anchor="end">${lit}</text>`;
+        });
+
+        // Wire from Stage-1 output to Stage-2 input
+        const s2Offset = terms.length === 1
+          ? gateH / 2
+          : 6 + (i * (gateH - 12)) / (terms.length - 1);
+        const targetY = s2Y + s2Offset;
+        const midX = s1OutX + 22 + Math.abs(i - (terms.length - 1) / 2) * 14;
+
+        svg += `<polyline points="${s1OutX},${gMidY} ${midX},${gMidY} ${midX},${targetY} ${s2InX},${targetY}"
+                  fill="none" stroke="${wireColor}" stroke-width="1.8"/>`;
+      });
+
+      // Stage-2 final gate (acts as inverter if terms.length === 1)
+      svg += drawGateSVG(gateType, s2X, s2Y);
+      svg += `<line x1="${s2OutX}" y1="${s2Y + gateH / 2}" x2="${s2OutX + 35}" y2="${s2Y + gateH / 2}"
+                stroke="${wireColor}" stroke-width="2"/>`;
+      svg += `<text x="${s2OutX + 44}" y="${s2Y + gateH / 2 + 5}" fill="#f8fafc" font-size="15" font-weight="bold">F</text>`;
+      svg += `</svg>`;
+
+      el.innerHTML = svg;
+    }
+
+    // --- 5. Solve & Update UI ---
+    function solveAndRender() {
+      const ones = [], zeros = [], dcs = [];
+      for (let i = 0; i < (1 << numVars); i++) {
+        if (cells[i] === 1) ones.push(i);
+        else if (cells[i] === 0) zeros.push(i);
+        else dcs.push(i);
+      }
+
+      // SOP (cover 1s)
+      const sopRes = solveBoolean(ones, dcs);
+      const sopTerms = sopRes.cubes.map(c => cubeToLiterals(c.pattern, false));
+      document.getElementById("sopExpr").textContent =
+        sopRes.constant !== null ? String(sopRes.constant) : sopTerms.map(t => t.join("")).join(" + ");
+      document.getElementById("sopGroups").innerHTML = sopRes.cubes
+        .map((c, i) => `<li>${sopTerms[i].join("")}: m(${c.covered.join(",")})</li>`)
+        .join("");
+      renderCircuit("nandCircuit", "NAND", sopTerms, sopRes.constant);
+
+      // POS (cover 0s — note: constant is inverted since covering 0s means F=0)
+      const posRes = solveBoolean(zeros, dcs);
+      const posConst = posRes.constant === null ? null : (posRes.constant === 1 ? 0 : 1);
+      const posTerms = posRes.cubes.map(c => cubeToLiterals(c.pattern, true));
+      document.getElementById("posExpr").textContent =
+        posConst !== null ? String(posConst) : posTerms.map(t => `(${t.join(" + ")})`).join("");
+      document.getElementById("posGroups").innerHTML = posRes.cubes
+        .map((c, i) => `<li>(${posTerms[i].join("+")}): M(${c.covered.join(",")})</li>`)
+        .join("");
+      renderCircuit("norCircuit", "NOR", posTerms, posConst);
+    }
+
+    // --- Event Listeners ---
+    varSelect.addEventListener("change", () => {
+      numVars = Number(varSelect.value);
+      cells = new Array(1 << numVars).fill(0);
+      renderKMap();
+      solveAndRender();
+    });
+
+    document.getElementById("btnReset").addEventListener("click", () => {
+      cells.fill(0);
+      renderKMap();
+      solveAndRender();
+    });
+
+    document.getElementById("btnAllOne").addEventListener("click", () => {
+      cells.fill(1);
+      renderKMap();
+      solveAndRender();
+    });
+
+    document.getElementById("btnRandom").addEventListener("click", () => {
+      const states = [0, 1, 1, "d"];
+      for (let i = 0; i < cells.length; i++) {
+        cells[i] = states[Math.floor(Math.random() * states.length)];
+      }
+      renderKMap();
+      solveAndRender();
+    });
+
+    // Initial render
+    renderKMap();
+    solveAndRender();
+  </script>
+</body>
+</html>
